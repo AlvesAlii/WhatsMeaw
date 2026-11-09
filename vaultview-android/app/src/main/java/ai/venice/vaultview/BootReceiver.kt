@@ -1,4 +1,3 @@
-cat > "$APP/java/ai/venice/vaultview/BootReceiver.kt" <<'EOF'
 package ai.venice.vaultview
 
 import android.content.BroadcastReceiver
@@ -20,4 +19,3 @@ class BootReceiver : BroadcastReceiver() {
         }
     }
 }
-EOF
