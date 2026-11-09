@@ -1,4 +1,3 @@
-cat > "$APP/java/ai/venice/vaultview/MediaWatcher.kt" <<'EOF'
 package ai.venice.vaultview
 
 import android.content.Context
@@ -115,7 +114,7 @@ class MediaWatcher(
         scope.launch {
             try {
                 if (!awaitReady(file)) return@launch
-                repo.ingest(file) { !indexedWithRetry(file.absolutePath) } && run { onNew(); true }
+                if (repo.ingest(file) { !indexedWithRetry(file.absolutePath) }) onNew()
             } finally {
                 inFlight.remove(file.absolutePath)
             }
@@ -148,4 +147,3 @@ class MediaWatcher(
         mediaObserver = null
     }
 }
-EOF
