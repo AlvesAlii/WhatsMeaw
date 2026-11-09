@@ -1,3 +1,4 @@
+cat > "$APP/java/ai/venice/vaultview/MediaWatcher.kt" <<'EOF'
 package ai.venice.vaultview
 
 import android.content.Context
@@ -17,9 +18,9 @@ import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * Observa as pastas de mídia do WhatsApp. Quando um arquivo novo aparece,
- * espera ele estabilizar de tamanho e entrega ao repositório antes que o
- * WhatsApp o apague.
+ * Observa as pastas de mídia do WhatsApp, incluindo .Statuses, onde ficam as
+ * mídias de visualização única. Copia o arquivo imediatamente, porque o
+ * WhatsApp apaga o original assim que a prévia é fechada.
  */
 class MediaWatcher(
     private val ctx: Context,
@@ -35,10 +36,17 @@ class MediaWatcher(
         get() {
             val base = Environment.getExternalStorageDirectory()
             val pkgs = listOf("com.whatsapp", "com.whatsapp.w4b")
-            val subs = listOf("WhatsApp Images", "WhatsApp Video", "WhatsApp Audio", "WhatsApp Voice Notes", "WhatsApp Animated Gifs")
+            val subs = listOf(
+                ".Statuses",
+                "WhatsApp Images",
+                "WhatsApp Video",
+                "WhatsApp Audio",
+                "WhatsApp Voice Notes",
+                "WhatsApp Animated Gifs",
+            )
             return pkgs.flatMap { p ->
                 subs.map { File(base, "Android/media/$p/Media/$it") }
-            }.filter { it.isDirectory }
+            }
         }
 
     fun start() {
@@ -47,10 +55,12 @@ class MediaWatcher(
     }
 
     private fun register(dir: File) {
+        if (!dir.isDirectory) dir.mkdirs()
+        if (!dir.isDirectory) return
         @Suppress("DEPRECATION")
         val o = object : FileObserver(
             dir.absolutePath,
-            FileObserver.CREATE or FileObserver.CLOSE_WRITE or FileObserver.MOVED_TO,
+            CREATE or CLOSE_WRITE or MOVED_TO,
         ) {
             override fun onEvent(event: Int, name: String?) {
                 if (name == null) return
@@ -104,25 +114,31 @@ class MediaWatcher(
         if (inFlight.putIfAbsent(file.absolutePath, true) != null) return
         scope.launch {
             try {
-                if (!file.exists() || file.length() == 0L) return@launch
-                if (!stable(file)) return@launch
-                val suspicious = !MediaIndex.contains(ctx, file.absolutePath)
-                if (repo.ingest(file, suspicious)) onNew()
+                if (!awaitReady(file)) return@launch
+                repo.ingest(file) { !indexedWithRetry(file.absolutePath) } && run { onNew(); true }
             } finally {
                 inFlight.remove(file.absolutePath)
             }
         }
     }
 
-    private suspend fun stable(file: File): Boolean {
-        var last = -1L
-        repeat(6) {
-            val len = file.length()
-            if (len > 0 && len == last) return true
-            last = len
-            delay(300)
+    /** Espera curta só para o arquivo deixar de estar vazio. */
+    private suspend fun awaitReady(f: File): Boolean {
+        repeat(24) {
+            if (!f.exists()) return false
+            if (f.length() > 0L) return true
+            delay(50)
         }
-        return file.exists() && file.length() > 0
+        return f.exists() && f.length() > 0L
+    }
+
+    /** O MediaStore demora a indexar; sem retry tudo vira "única" por engano. */
+    private suspend fun indexedWithRetry(path: String): Boolean {
+        repeat(3) {
+            if (MediaIndex.contains(ctx, path)) return true
+            delay(250)
+        }
+        return false
     }
 
     fun stop() {
@@ -132,3 +148,4 @@ class MediaWatcher(
         mediaObserver = null
     }
 }
+EOF
