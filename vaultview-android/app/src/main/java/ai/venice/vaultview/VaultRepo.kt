@@ -1,3 +1,4 @@
+cat > "$APP/java/ai/venice/vaultview/VaultRepo.kt" <<'EOF'
 package ai.venice.vaultview
 
 import android.content.ContentValues
@@ -36,35 +37,59 @@ class VaultRepo(private val ctx: Context) {
         return out
     }
 
-    suspend fun ingest(src: File, suspicious: Boolean): Boolean = withContext(Dispatchers.IO) {
-        val sha = runCatching { sha256(src) }.getOrNull() ?: return@withContext false
-        if (exists(sha)) return@withContext false
-
-        val ext = src.extension.ifBlank { "bin" }
-        val dest = File(dir, "${System.currentTimeMillis()}_${sha.take(10)}.$ext")
-        val ok = runCatching { src.copyTo(dest, overwrite = true) }
-            .recoverCatching { Thread.sleep(250); src.copyTo(dest, overwrite = true) }
-            .isSuccess
-        if (!ok) return@withContext false
-
-        val mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext) ?: "application/octet-stream"
-        db.writableDatabase.insert("media", null, ContentValues().apply {
-            put("path", dest.absolutePath)
-            put("name", dest.name)
-            put("mime", mime)
-            put("kind", when {
-                mime.startsWith("image") -> "image"
-                mime.startsWith("video") -> "video"
-                mime.startsWith("audio") -> "audio"
-                else -> "file"
-            })
-            put("size", dest.length())
-            put("sha", sha)
-            put("ts", System.currentTimeMillis())
-            put("suspicious", if (suspicious) 1 else 0)
-        })
-        true
+    fun byId(id: Long): Item? = db.readableDatabase.rawQuery(
+        "SELECT id, path, name, mime, kind, size, ts, suspicious FROM media WHERE id = ?",
+        arrayOf(id.toString()),
+    ).use { c ->
+        if (!c.moveToFirst()) return null
+        Item(
+            c.getLong(0), c.getString(1), c.getString(2), c.getString(3),
+            c.getString(4), c.getLong(5), c.getLong(6), c.getInt(7) == 1,
+        )
     }
+
+    /**
+     * Copia primeiro (o original pode sumir a qualquer momento), depois decide
+     * se é suspeito, calcula hash e grava. O hash é feito na cópia, não na origem.
+     */
+    suspend fun ingest(src: File, isSuspicious: suspend () -> Boolean): Boolean =
+        withContext(Dispatchers.IO) {
+            val ext = src.extension.ifBlank { "bin" }
+            val tmp = File(dir, ".tmp_${System.nanoTime()}")
+            val ok = runCatching { src.copyTo(tmp, overwrite = true) }
+                .recoverCatching { Thread.sleep(120); src.copyTo(tmp, overwrite = true) }
+                .isSuccess
+            if (!ok || tmp.length() == 0L) { tmp.delete(); return@withContext false }
+
+            val sha = runCatching { sha256(tmp) }.getOrNull()
+            if (sha == null) { tmp.delete(); return@withContext false }
+            if (exists(sha)) { tmp.delete(); return@withContext false }
+
+            val dest = File(dir, "${System.currentTimeMillis()}_${sha.take(10)}.$ext")
+            if (!runCatching { tmp.renameTo(dest) }.getOrDefault(false)) {
+                tmp.delete(); return@withContext false
+            }
+
+            val suspicious = runCatching { isSuspicious() }.getOrDefault(false)
+            val mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext)
+                ?: "application/octet-stream"
+            db.writableDatabase.insert("media", null, ContentValues().apply {
+                put("path", dest.absolutePath)
+                put("name", dest.name)
+                put("mime", mime)
+                put("kind", when {
+                    mime.startsWith("image") -> "image"
+                    mime.startsWith("video") -> "video"
+                    mime.startsWith("audio") -> "audio"
+                    else -> "file"
+                })
+                put("size", dest.length())
+                put("sha", sha)
+                put("ts", System.currentTimeMillis())
+                put("suspicious", if (suspicious) 1 else 0)
+            })
+            true
+        }
 
     /** Exporta a cópia interna para a galeria ou para Download/VaultView. */
     suspend fun saveToPublic(item: Item): Uri? = withContext(Dispatchers.IO) {
@@ -92,8 +117,8 @@ class VaultRepo(private val ctx: Context) {
                 put(MediaStore.MediaColumns.RELATIVE_PATH, relative)
                 put(MediaStore.MediaColumns.IS_PENDING, 1)
             }
-            val uri = runCatching { ctx.contentResolver.insert(collection, values) }.getOrNull()
-                ?: return@withContext null
+            val uri = runCatching { ctx.contentResolver.insert(collection, values) }
+                .getOrNull() ?: return@withContext null
             runCatching {
                 ctx.contentResolver.openOutputStream(uri)?.use { out ->
                     src.inputStream().use { it.copyTo(out) }
@@ -115,7 +140,8 @@ class VaultRepo(private val ctx: Context) {
         }
         val target = File(base, "VaultView").apply { mkdirs() }
         val out = File(target, name)
-        runCatching { src.copyTo(out, overwrite = true) }.getOrNull() ?: return@withContext null
+        runCatching { src.copyTo(out, overwrite = true) }.getOrNull()
+            ?: return@withContext null
         MediaScannerConnection.scanFile(ctx, arrayOf(out.absolutePath), arrayOf(mime), null)
         return@withContext Uri.fromFile(out)
     }
@@ -128,12 +154,16 @@ class VaultRepo(private val ctx: Context) {
 
     private fun exportName(item: Item): String {
         val ext = item.name.substringAfterLast('.', "bin")
-        val stamp = java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.US).format(java.util.Date())
+        val stamp = java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.US)
+            .format(java.util.Date())
         return "VV_${stamp}_${item.id}.$ext"
     }
 
     fun markSuspicious(id: Long, value: Boolean) {
-        db.writableDatabase.execSQL("UPDATE media SET suspicious = ? WHERE id = ?", arrayOf(if (value) 1 else 0, id))
+        db.writableDatabase.execSQL(
+            "UPDATE media SET suspicious = ? WHERE id = ?",
+            arrayOf(if (value) 1 else 0, id),
+        )
     }
 
     fun delete(item: Item) {
@@ -145,7 +175,8 @@ class VaultRepo(private val ctx: Context) {
         FileProvider.getUriForFile(ctx, "${ctx.packageName}.fileprovider", File(item.path))
 
     private fun exists(sha: String): Boolean =
-        db.readableDatabase.rawQuery("SELECT 1 FROM media WHERE sha = ?", arrayOf(sha)).use { it.moveToFirst() }
+        db.readableDatabase.rawQuery("SELECT 1 FROM media WHERE sha = ?", arrayOf(sha))
+            .use { it.moveToFirst() }
 
     private fun sha256(f: File): String {
         val md = MessageDigest.getInstance("SHA-256")
@@ -165,3 +196,4 @@ class VaultRepo(private val ctx: Context) {
         val kind: String?, val size: Long, val ts: Long, val suspicious: Boolean,
     )
 }
+EOF
