@@ -1,4 +1,3 @@
-cat > "$APP/java/ai/venice/vaultview/VaultRepo.kt" <<'EOF'
 package ai.venice.vaultview
 
 import android.content.ContentValues
@@ -59,15 +58,25 @@ class VaultRepo(private val ctx: Context) {
             val ok = runCatching { src.copyTo(tmp, overwrite = true) }
                 .recoverCatching { Thread.sleep(120); src.copyTo(tmp, overwrite = true) }
                 .isSuccess
-            if (!ok || tmp.length() == 0L) { tmp.delete(); return@withContext false }
+            if (!ok || tmp.length() == 0L) {
+                tmp.delete()
+                return@withContext false
+            }
 
             val sha = runCatching { sha256(tmp) }.getOrNull()
-            if (sha == null) { tmp.delete(); return@withContext false }
-            if (exists(sha)) { tmp.delete(); return@withContext false }
+            if (sha == null) {
+                tmp.delete()
+                return@withContext false
+            }
+            if (exists(sha)) {
+                tmp.delete()
+                return@withContext false
+            }
 
             val dest = File(dir, "${System.currentTimeMillis()}_${sha.take(10)}.$ext")
             if (!runCatching { tmp.renameTo(dest) }.getOrDefault(false)) {
-                tmp.delete(); return@withContext false
+                tmp.delete()
+                return@withContext false
             }
 
             val suspicious = runCatching { isSuspicious() }.getOrDefault(false)
@@ -133,7 +142,8 @@ class VaultRepo(private val ctx: Context) {
         @Suppress("DEPRECATION")
         val base = if (toGallery) {
             Environment.getExternalStoragePublicDirectory(
-                if (item.kind == "video") Environment.DIRECTORY_MOVIES else Environment.DIRECTORY_PICTURES,
+                if (item.kind == "video") Environment.DIRECTORY_MOVIES
+                else Environment.DIRECTORY_PICTURES,
             )
         } else {
             Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
@@ -196,4 +206,3 @@ class VaultRepo(private val ctx: Context) {
         val kind: String?, val size: Long, val ts: Long, val suspicious: Boolean,
     )
 }
-EOF
