@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">VaultView</string>
+    <string name="notif_title">VaultView ativo</string>
+    <string name="notif_text">Vigiando novas mídias do WhatsApp</string>
+</resources>
