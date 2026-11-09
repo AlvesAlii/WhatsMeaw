@@ -1,4 +1,3 @@
-cat > "$APP/res/layout/activity_viewer.xml" <<'EOF'
 <?xml version="1.0" encoding="utf-8"?>
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
@@ -58,4 +57,3 @@ cat > "$APP/res/layout/activity_viewer.xml" <<'EOF'
             android:text="Fechar" />
     </LinearLayout>
 </FrameLayout>
-EOF
