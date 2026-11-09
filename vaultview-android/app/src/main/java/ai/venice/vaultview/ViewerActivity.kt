@@ -1,4 +1,3 @@
-cat > "$APP/java/ai/venice/vaultview/ViewerActivity.kt" <<'EOF'
 package ai.venice.vaultview
 
 import android.content.Intent
@@ -75,9 +74,7 @@ class ViewerActivity : AppCompatActivity() {
         val it = item ?: return
         lifecycleScope.launch {
             val uri = withContext(Dispatchers.IO) { repo.saveToPublic(it) }
-            toast(
-                if (uri == null) "Falhou ao salvar" else "Salvo em ${repo.exportDirHint(it)}",
-            )
+            toast(if (uri == null) "Falhou ao salvar" else "Salvo em ${repo.exportDirHint(it)}")
         }
     }
 
@@ -97,4 +94,3 @@ class ViewerActivity : AppCompatActivity() {
         const val EXTRA_ID = "id"
     }
 }
-EOF
