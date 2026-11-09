@@ -30,16 +30,27 @@ class MainActivity : AppCompatActivity() {
     private var pendingSave: VaultRepo.Item? = null
     private var pendingAll = false
 
-    private val notifPerm = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    private val notifPerm =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
-    private val readPerm = registerForActivityResult(ActivityResultContracts.RequestPermission()) { start() }
+    private val readPerm =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { start() }
 
-    private val writePerm = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (!granted) { toast("Sem permissão de escrita"); return@registerForActivityResult }
-        val one = pendingSave
-        pendingSave = null
-        if (pendingAll) { pendingAll = false; saveAll() } else if (one != null) save(one)
-    }
+    private val writePerm =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            if (!granted) {
+                toast("Sem permissão de escrita")
+                return@registerForActivityResult
+            }
+            val one = pendingSave
+            pendingSave = null
+            if (pendingAll) {
+                pendingAll = false
+                saveAll()
+            } else if (one != null) {
+                save(one)
+            }
+        }
 
     override fun onCreate(s: Bundle?) {
         super.onCreate(s)
@@ -57,7 +68,9 @@ class MainActivity : AppCompatActivity() {
         b.refresh.setOnClickListener { refresh() }
         b.filter.setOnCheckedChangeListener { _, _ -> refresh() }
 
-        if (Build.VERSION.SDK_INT >= 33) notifPerm.launch("android.permission.POST_NOTIFICATIONS")
+        if (Build.VERSION.SDK_INT >= 33) {
+            notifPerm.launch("android.permission.POST_NOTIFICATIONS")
+        }
     }
 
     override fun onResume() {
@@ -76,7 +89,10 @@ class MainActivity : AppCompatActivity() {
 
     private fun askFiles() {
         val i = if (Build.VERSION.SDK_INT >= 30) {
-            Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, Uri.parse("package:$packageName"))
+            Intent(
+                Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                Uri.parse("package:$packageName"),
+            )
         } else {
             Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))
         }
@@ -84,7 +100,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun start() {
-        if (!hasFiles()) { askFiles(); return }
+        if (!hasFiles()) {
+            askFiles()
+            return
+        }
         if (Build.VERSION.SDK_INT < 30 &&
             ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) !=
             PackageManager.PERMISSION_GRANTED
@@ -122,8 +141,15 @@ class MainActivity : AppCompatActivity() {
 
     private fun saveAll() {
         val list = adapter.currentList()
-        if (list.isEmpty()) { toast("Nada para baixar"); return }
-        if (needWrite()) { pendingAll = true; writePerm.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE); return }
+        if (list.isEmpty()) {
+            toast("Nada para baixar")
+            return
+        }
+        if (needWrite()) {
+            pendingAll = true
+            writePerm.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+            return
+        }
         lifecycleScope.launch {
             b.saveAll.isEnabled = false
             b.status.text = "Baixando ${list.size} itens..."
@@ -135,25 +161,28 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun open(item: VaultRepo.Item) {
-        val i = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(repo.uriOf(item), item.mime ?: "*/*")
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        }
-        runCatching { startActivity(i) }
+        startActivity(
+            Intent(this, ViewerActivity::class.java).putExtra(ViewerActivity.EXTRA_ID, item.id),
+        )
     }
 
     private fun menu(item: VaultRepo.Item) {
         MaterialAlertDialogBuilder(this)
             .setTitle(item.name)
-            .setItems(arrayOf("Baixar para o aparelho", "Compartilhar", "Marcar como normal", "Apagar")) { _, w ->
+            .setItems(
+                arrayOf("Abrir", "Baixar para o aparelho", "Compartilhar", "Marcar como normal", "Apagar"),
+            ) { _, w ->
                 when (w) {
-                    0 -> {
+                    0 -> open(item)
+                    1 -> {
                         if (needWrite()) {
                             pendingSave = item
                             writePerm.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
-                        } else save(item)
+                        } else {
+                            save(item)
+                        }
                     }
-                    1 -> {
+                    2 -> {
                         val i = Intent(Intent.ACTION_SEND).apply {
                             type = item.mime ?: "*/*"
                             putExtra(Intent.EXTRA_STREAM, repo.uriOf(item))
@@ -161,10 +190,17 @@ class MainActivity : AppCompatActivity() {
                         }
                         startActivity(Intent.createChooser(i, "Compartilhar"))
                     }
-                    2 -> { repo.markSuspicious(item.id, false); refresh() }
-                    3 -> { repo.delete(item); refresh() }
+                    3 -> {
+                        repo.markSuspicious(item.id, false)
+                        refresh()
+                    }
+                    4 -> {
+                        repo.delete(item)
+                        refresh()
+                    }
                 }
-            }.show()
+            }
+            .show()
     }
 
     private fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
