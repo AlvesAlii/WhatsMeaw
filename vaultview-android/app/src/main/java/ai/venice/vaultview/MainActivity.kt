@@ -32,6 +32,8 @@ class MainActivity : AppCompatActivity() {
 
     private val notifPerm = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
+    private val readPerm = registerForActivityResult(ActivityResultContracts.RequestPermission()) { start() }
+
     private val writePerm = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (!granted) { toast("Sem permissão de escrita"); return@registerForActivityResult }
         val one = pendingSave
@@ -83,6 +85,13 @@ class MainActivity : AppCompatActivity() {
 
     private fun start() {
         if (!hasFiles()) { askFiles(); return }
+        if (Build.VERSION.SDK_INT < 30 &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            readPerm.launch(Manifest.permission.READ_EXTERNAL_STORAGE)
+            return
+        }
         ContextCompat.startForegroundService(this, Intent(this, WatcherService::class.java))
         running = true
         b.toggle.text = "Desligar"
