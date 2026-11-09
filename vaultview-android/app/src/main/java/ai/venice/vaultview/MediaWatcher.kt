@@ -50,7 +50,7 @@ class MediaWatcher(
         @Suppress("DEPRECATION")
         val o = object : FileObserver(
             dir.absolutePath,
-            CREATE or CLOSE_WRITE or MOVED_TO,
+            FileObserver.CREATE or FileObserver.CLOSE_WRITE or FileObserver.MOVED_TO,
         ) {
             override fun onEvent(event: Int, name: String?) {
                 if (name == null) return
